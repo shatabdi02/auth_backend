@@ -11,36 +11,56 @@ const uploadFile = async (req, res) => {
             });
         }
 
-        // Upload to Cloudinary
-        const result = await cloudinary.uploader.upload(req.file.path, {
-            folder: 'auth-app-uploads',
-            resource_type: 'auto'
-        });
+        // Upload to Cloudinary using buffer (memory storage)
+        const result = await cloudinary.uploader.upload_stream(
+            {
+                folder: 'auth-app-uploads',
+                resource_type: 'auto',
+                public_id: `${Date.now()}_${req.file.originalname.split('.')[0]}`
+            },
+            (error, result) => {
+                if (error) {
+                    console.error('Cloudinary upload error:', error);
+                    return res.status(500).json({
+                        success: false,
+                        message: 'Error uploading to Cloudinary'
+                    });
+                }
 
-        // Save file metadata to database
-        const fileData = {
-            user_id: req.user.id,
-            filename: result.public_id,
-            original_name: req.file.originalname,
-            file_type: req.file.mimetype,
-            file_size: req.file.size,
-            cloudinary_url: result.secure_url,
-            cloudinary_public_id: result.public_id
-        };
+                // Save file metadata to database
+                const fileData = {
+                    user_id: req.user.id,
+                    filename: result.public_id,
+                    original_name: req.file.originalname,
+                    file_type: req.file.mimetype,
+                    file_size: req.file.size,
+                    cloudinary_url: result.secure_url,
+                    cloudinary_public_id: result.public_id
+                };
 
-        const fileId = await File.create(fileData);
-
-        res.status(201).json({
-            success: true,
-            message: 'File uploaded successfully',
-            file: {
-                id: fileId,
-                url: result.secure_url,
-                original_name: req.file.originalname,
-                file_type: req.file.mimetype,
-                file_size: req.file.size
+                File.create(fileData)
+                    .then(fileId => {
+                        res.status(201).json({
+                            success: true,
+                            message: 'File uploaded successfully',
+                            file: {
+                                id: fileId,
+                                url: result.secure_url,
+                                original_name: req.file.originalname,
+                                file_type: req.file.mimetype,
+                                file_size: req.file.size
+                            }
+                        });
+                    })
+                    .catch(dbError => {
+                        console.error('Database error:', dbError);
+                        res.status(500).json({
+                            success: false,
+                            message: 'Error saving file metadata'
+                        });
+                    });
             }
-        });
+        ).end(req.file.buffer);
     } catch (error) {
         console.error('Upload error:', error);
         res.status(500).json({
